@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>NetRoute — Network Routing Simulator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script defer src="https://cdn.jsdelivr.net/npm/cytoscape@3.34.4/dist/cytoscape.min.js"></script>
+  <script defer src="{{ url_for('static', filename='js/router_names.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="NetRoute home">
+      <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span>Net<span class="brand-accent">Route</span><small>ROUTING LAB</small></span>
+    </a>
+
+    <nav class="topnav" aria-label="Main navigation">
+      <a class="nav-link active" href="#editor">Network Editor</a>
+      <a class="nav-link" href="#simulation">Simulation</a>
+      <a class="nav-link" href="#routing-table">Routing Table</a>
+      <a class="nav-link" href="#presets">Presets</a>
+    </nav>
+
+    <div class="top-actions">
+      <div class="connection-status" id="connection-status" role="status">
+        <span class="status-dot"></span><span id="connection-label">Connecting</span>
+      </div>
+      <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch theme">
+        <span class="theme-glyph" aria-hidden="true">☼</span>
+      </button>
+      <button class="mobile-menu-button" id="mobile-menu-toggle" type="button" aria-label="Toggle controls" aria-expanded="false">☰</button>
+    </div>
+  </header>
+
+  <main id="top" class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Network controls">
+      <div class="sidebar-heading">
+        <div><span class="eyebrow">WORKSPACE</span><h1>Network editor</h1></div>
+        <span class="live-pill"><span></span> LIVE</span>
+      </div>
+
+      <section class="control-section">
+        <div class="section-title"><h2>Tools</h2><span class="muted-label">CANVAS</span></div>
+        <div class="tool-grid" role="group" aria-label="Canvas tools">
+          <button class="tool-button active" id="tool-select" data-tool="select" type="button" title="Select and move routers or links">
+            <span class="tool-icon">↖</span><span>Select</span>
+          </button>
+          <button class="tool-button" id="tool-add-router" data-tool="add-router" type="button" title="Add a router to the network">
+            <span class="tool-icon">＋</span><span>Add router</span>
+          </button>
+          <button class="tool-button" id="tool-add-link" data-tool="add-link" type="button" title="Select two routers to connect">
+            <span class="tool-icon">⤳</span><span>Add link</span>
+          </button>
+          <button class="tool-button danger-tool" id="delete-selection" type="button" title="Delete selected router or link" disabled>
+            <span class="tool-icon">⌫</span><span>Delete</span>
+          </button>
+        </div>
+        <p class="tool-hint" id="tool-hint">Select a router or link to inspect it.</p>
+      </section>
+
+      <section class="control-section">
+        <div class="section-title"><h2>Route endpoints</h2><span class="muted-label">DIJKSTRA</span></div>
+        <label class="field-label" for="source-select">Source router</label>
+        <select id="source-select" class="input-control"><option value="">Choose source</option></select>
+        <label class="field-label spaced-label" for="destination-select">Destination router</label>
+        <select id="destination-select" class="input-control"><option value="">Choose destination</option></select>
+        <button class="button button-primary full-button" id="calculate-path" type="button">
+          <span aria-hidden="true">⌁</span> Calculate shortest path
+        </button>
+      </section>
+
+      <section class="control-section settings-section" id="router-settings">
+        <div class="section-title"><h2>Router settings</h2><span class="selection-tag" id="router-selection-tag">NONE</span></div>
+        <div class="empty-settings" id="router-empty">Select a router on the canvas to edit its name.</div>
+        <div id="router-form" class="settings-form hidden">
+          <label class="field-label" for="router-name">Router name</label>
+          <div class="inline-control"><input class="input-control" id="router-name" maxlength="2" autocomplete="off"><button class="small-button" id="rename-router" type="button">Save</button></div>
+          <p class="field-note">Names must be unique. Existing links are preserved when renamed.</p>
+          <div class="router-badges" id="router-badges"></div>
+        </div>
+      </section>
+
+      <section class="control-section settings-section" id="link-settings">
+        <div class="section-title"><h2>Link settings</h2><span class="selection-tag" id="link-selection-tag">NONE</span></div>
+        <div class="empty-settings" id="link-empty">Select a link on the canvas to edit its cost.</div>
+        <div id="link-form" class="settings-form hidden">
+          <label class="field-label" for="link-cost">Link cost</label>
+          <div class="inline-control"><input class="input-control" id="link-cost" type="number" min="0" step="any"><button class="small-button" id="update-link" type="button">Update</button></div>
+          <p class="field-note" id="link-endpoints">—</p>
+        </div>
+      </section>
+
+      <section class="control-section presets-section" id="presets">
+        <div class="section-title"><h2>Load a preset</h2><span class="muted-label">STARTER TOPOLOGIES</span></div>
+        <select id="preset-select" class="input-control"><option value="">Loading presets…</option></select>
+        <p class="preset-description" id="preset-description">Choose a network to see its description.</p>
+        <button class="button button-secondary full-button" id="load-preset" type="button">Load preset network</button>
+        <button class="text-button full-button" id="clear-network" type="button">Clear network</button>
+      </section>
+      <div class="sidebar-footer"><span class="keyboard-key">SCROLL</span> to zoom · drag to pan</div>
+    </aside>
+
+    <section class="workspace" id="editor" aria-label="Network workspace">
+      <div class="workspace-heading">
+        <div>
+          <div class="eyebrow">TOPOLOGY VISUALIZER <span class="heading-divider">/</span> <span id="network-name">CUSTOM NETWORK</span></div>
+          <h2>Network canvas</h2>
+          <p>Design your topology, then run the route calculation.</p>
+        </div>
+        <div class="canvas-summary"><span class="summary-value" id="router-count">0</span><span>routers</span><i></i><span class="summary-value" id="link-count">0</span><span>links</span></div>
+      </div>
+
+      <div class="canvas-toolbar">
+        <div class="canvas-tool-status"><span class="canvas-status-indicator"></span><span id="canvas-status">Ready to edit</span></div>
+        <div class="canvas-actions">
+          <label class="sr-only" for="layout-select">Graph layout</label>
+          <select id="layout-select" class="compact-select"><option value="cose">Force layout</option><option value="grid">Grid layout</option><option value="circle">Circle layout</option></select>
+          <button class="icon-button canvas-icon" id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+          <button class="icon-button canvas-icon" id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+          <button class="icon-button canvas-icon" id="fit-canvas" type="button" title="Fit graph to canvas" aria-label="Fit graph to canvas">⛶</button>
+        </div>
+      </div>
+
+      <div class="canvas-frame" id="canvas-frame">
+        <div id="cy" aria-label="Interactive network graph"></div>
+        <div class="canvas-empty" id="canvas-empty">
+          <div class="empty-orbit"><span>＋</span></div>
+          <strong>Your topology starts here</strong>
+          <p>Add a router or load a preset network to begin.</p>
+          <button class="button button-secondary" id="empty-add-router" type="button">＋ Add first router</button>
+        </div>
+        <div class="packet-layer" id="packet-layer" aria-hidden="true"></div>
+        <div class="canvas-zoom-hint"><span>⌖</span> Drag to pan <i></i> Scroll to zoom</div>
+      </div>
+
+      <div class="canvas-footer">
+        <div class="legend">
+          <span><i class="legend-dot normal"></i>Router</span>
+          <span><i class="legend-dot source"></i>Source</span>
+          <span><i class="legend-dot destination"></i>Destination</span>
+          <span><i class="legend-line route"></i>Shortest path</span>
+        </div>
+        <span class="graph-note" id="graph-note">Undirected links · non-negative costs</span>
+      </div>
+
+      <div class="api-alert hidden" id="api-alert" role="alert"></div>
+
+      <section class="routing-section panel" id="routing-table">
+        <div class="panel-heading">
+          <div><span class="eyebrow">FORWARDING OVERVIEW</span><h2>Routing table</h2></div>
+          <button class="button button-quiet" id="refresh-table" type="button">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Destination</th><th>Next hop</th><th>Cost</th><th>Path</th></tr></thead>
+            <tbody id="routing-table-body"><tr><td colspan="4" class="table-empty">Calculate a route to populate the routing table.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <aside class="inspector" aria-label="Simulation and route results">
+      <section class="panel result-panel" id="results">
+        <div class="panel-heading compact-heading"><div><span class="eyebrow">ROUTE ANALYSIS</span><h2>Shortest path</h2></div><span class="panel-icon">⌁</span></div>
+        <div class="result-empty" id="result-empty"><span class="route-icon">↗</span><strong>Ready when you are</strong><p>Select a source and destination, then calculate the shortest path.</p></div>
+        <div class="result-content hidden" id="result-content">
+          <div class="result-state" id="result-state"><span class="state-dot"></span><span id="result-state-text">Route found</span></div>
+          <div class="route-endpoints"><div><small>SOURCE</small><strong id="result-source">—</strong></div><span class="route-arrow">→</span><div><small>DESTINATION</small><strong id="result-destination">—</strong></div></div>
+          <div class="path-display"><span class="eyebrow">OPTIMAL ROUTE</span><div id="result-path" class="path-nodes">—</div></div>
+          <div class="result-metrics"><div><span>Total cost</span><strong id="result-cost">—</strong></div><div><span>Routers visited</span><strong id="result-visited-count">—</strong></div></div>
+          <div class="visited-display"><span class="eyebrow">VISIT ORDER</span><div id="visited-order" class="visited-chips">—</div></div>
+          <button class="button button-primary full-button" id="packet-start" type="button" disabled>▶ Forward a packet</button>
+        </div>
+      </section>
+
+      <section class="panel simulation-panel" id="simulation">
+        <div class="panel-heading compact-heading"><div><span class="eyebrow">ALGORITHM WALKTHROUGH</span><h2>Simulation</h2></div><span class="simulation-live" id="simulation-state">IDLE</span></div>
+        <p class="panel-description">Step through the backend's Dijkstra execution history.</p>
+        <div class="simulation-summary" id="simulation-summary"><span class="sim-step-number">—</span><span>Generate history to inspect each algorithm step.</span></div>
+        <button class="button button-secondary full-button sim-run-button" id="sim-run" type="button">▣ Generate execution history</button>
+        <div class="simulation-current hidden" id="simulation-current"><span class="current-label">CURRENT ROUTER</span><strong id="current-router">—</strong><span class="current-step-text" id="current-step-text"></span></div>
+        <div class="simulation-controls">
+          <button class="icon-button sim-control" id="sim-previous" type="button" aria-label="Previous step" title="Previous step" disabled>◀</button>
+          <button class="button button-primary play-button" id="sim-play" type="button" disabled>▶ Play</button>
+          <button class="icon-button sim-control" id="sim-next" type="button" aria-label="Next step" title="Next step" disabled>▶</button>
+          <button class="icon-button sim-control" id="sim-reset" type="button" aria-label="Reset simulation" title="Reset simulation" disabled>↺</button>
+        </div>
+        <label class="sr-only" for="sim-progress">Simulation progress</label>
+        <input id="sim-progress" class="progress-range" type="range" min="0" max="0" value="0" disabled>
+        <div class="progress-labels"><span id="progress-current">Step 0</span><span id="progress-total">0 steps</span></div>
+        <div class="sim-details" id="sim-details">
+          <div class="sim-detail-head"><span>Distance table</span><span id="distance-update-indicator"></span></div>
+          <div class="distance-list" id="distance-list"><p class="muted-copy">No simulation state yet.</p></div>
+          <div class="update-list" id="update-list"></div>
+        </div>
+        <div class="iteration-table-wrap" id="iteration-table-wrap">
+          <div class="sim-detail-head"><span>Dijkstra iteration table</span></div>
+          <div class="iteration-scroll"><table class="iteration-table"><thead id="iteration-table-head"></thead><tbody id="iteration-table-body"><tr><td>Generate history to view iterations.</td></tr></tbody></table></div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <dialog class="modal" id="router-dialog">
+    <form method="dialog" id="router-dialog-form">
+      <div class="modal-heading"><div><span class="eyebrow">NETWORK EDITOR</span><h2>Add router</h2></div><button class="icon-button modal-close" value="cancel" aria-label="Close">×</button></div>
+      <label class="field-label" for="new-router-name">Router name</label>
+      <input class="input-control" id="new-router-name" maxlength="2" placeholder="e.g. R5" required autocomplete="off">
+      <p class="field-note">Use one or two characters. Names must be unique.</p>
+      <div class="modal-actions"><button class="button button-quiet" value="cancel">Cancel</button><button class="button button-primary" id="confirm-add-router" value="default">Add router</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="link-dialog">
+    <form method="dialog" id="link-dialog-form">
+      <div class="modal-heading"><div><span class="eyebrow">NETWORK EDITOR</span><h2>Connect routers</h2></div><button class="icon-button modal-close" value="cancel" aria-label="Close">×</button></div>
+      <p class="modal-copy">Create an undirected link between <strong id="link-from-label"></strong> and <strong id="link-to-label"></strong>.</p>
+      <label class="field-label" for="new-link-cost">Link cost</label>
+      <input class="input-control" id="new-link-cost" type="number" min="0" step="any" value="1" required>
+      <div class="modal-actions"><button class="button button-quiet" value="cancel">Cancel</button><button class="button button-primary" id="confirm-add-link" value="default">Create link</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>
+
+
+
